@@ -1,0 +1,51 @@
+.vod-block {
+    /* background: #111111; */
+    width: 260px !important;
+    height: 295px !important;
+    min-width: 260px !important;
+    min-height: 295px !important;
+    max-width: 260px !important;
+    max-height: 295px !important;
+    overflow: none;
+    display: inline-block;
+    float: left;
+    margin: auto;
+    position: relative;
+}
+.vod-block-inner {
+    /* background: #111111; */
+    width: 260px !important;
+    height: 250px !important;
+    min-width: 260px !important;
+    min-height: 250px !important;
+    max-width: 260px !important;
+    max-height: 250px !important;
+    overflow: none;
+    display: inline-block;
+    float: left;
+    margin: auto;
+    position: relative;
+}
+.vod-thumbnail {
+    max-width: 250px;
+    max-height: 250px;
+    min-height: 250px;
+    display: inline-block;
+    /* float: left; */
+    padding: 0px;
+    margin: auto auto; 
+}
+.vod-title {
+    border-top: 1px solid #cccccc;
+    max-width: 248px;
+    min-width: 248px;
+    max-height: 45px;
+    min-height: 45px;
+    display: inline-block;
+    /* float: left; */
+    /* padding: 4px; */
+    overflow: none;
+    margin: auto;
+}
+.vod-grow { transition: all .2s ease-in-out; }
+.vod-grow:hover { transform: scale(1.1); }
