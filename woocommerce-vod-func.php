@@ -342,7 +342,7 @@
           $product_id = $result[$i]->post_parent;
         } else {
           // Get the product id, which is actually the variation id and use it to get the parent product id
-          $variation_id = $result[$i][product_id];
+          $variation_id = $result[$i]['product_id'];
           $product_id = wp_get_post_parent_id($variation_id);
         }
         $product = new WC_Product($product_id);
