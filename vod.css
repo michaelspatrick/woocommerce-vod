@@ -44,3 +44,17 @@
     vertical-align: top;
 }
 
+/* User edit/profile: make product Select2 usable */
+.user-edit-php .dsi-vod-meta .select2-container,
+.profile-php   .dsi-vod-meta .select2-container {
+  width: 100% !important;
+  min-width: 450px !important;
+  max-width: 800px !important;
+  box-sizing: border-box !important;
+}
+
+.user-edit-php .dsi-vod-meta .wc-product-search,
+.profile-php   .dsi-vod-meta .wc-product-search {
+  width: 100% !important;
+  max-width: 800px !important;
+}

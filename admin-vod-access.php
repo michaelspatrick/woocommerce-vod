@@ -130,37 +130,16 @@ if ( ! function_exists( 'dsi_vod_is_order_item_vod' ) ) {
 }
 
 /* ====================== Assets (enqueue CSS/JS) ====================== */
-
 add_action( 'admin_enqueue_scripts', function( $hook ) {
-    // Only load on our access page, user profile/edit, and order edit/new
-    $screens = array( 'woocommerce_page_dsi-vod-access', 'user-edit.php', 'profile.php', 'post.php', 'post-new.php' );
-
-    if ( ! in_array( $hook, $screens, true ) ) {
-        return;
-    }
-
-    // If we're on post.php or post-new.php, make sure it's for orders, not products.
-    if ( $hook === 'post.php' || $hook === 'post-new.php' ) {
-        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-        if ( $screen && $screen->post_type !== 'shop_order' ) {
-            // Bail on product edit pages to avoid interfering with Woo’s product UI
-            return;
+    if ( in_array( $hook, ['user-edit.php','profile.php','woocommerce_page_dsi-vod-access','post.php','post-new.php'], true ) ) {
+        if ( function_exists('WC') ) {
+            wp_enqueue_script('selectWoo');
+            wp_enqueue_style('select2');
+            wp_enqueue_script('wc-enhanced-select');
+            wp_enqueue_style('woocommerce_admin_styles');
         }
+        wp_enqueue_style('dsi-vod-admin', plugins_url('vod.css', __FILE__), [], '1.0.0');
     }
-
-    if ( function_exists( 'WC' ) ) {
-        wp_enqueue_script( 'selectWoo' );
-        wp_enqueue_style( 'select2' );
-        wp_enqueue_script( 'wc-enhanced-select' );
-        wp_enqueue_style( 'woocommerce_admin_styles' );
-    }
-
-    wp_enqueue_style(
-        'dsi-vod-admin',
-        plugins_url( 'assets/css/vod.css', __FILE__ ),
-        array(),
-        '1.0.0'
-    );
 });
 
 /* Init selectWoo on pages where we render product pickers using Woo's endpoint */
@@ -386,6 +365,7 @@ function dsi_vod_user_profile_box( $user ) {
     $data = dsi_vod_get_user_vods_paginated( (int) $user->ID, 1, 20 );
     $rows = $data['rows'];
 
+    echo '<div class="dsi-vod-meta">';
     echo '<h2>' . esc_html__( 'VOD Access', 'woocommerce_vod' ) . '</h2>';
     if ( empty( $rows ) ) {
         echo '<p>' . esc_html__( 'No VOD access for this user.', 'woocommerce_vod' ) . '</p>';
@@ -429,6 +409,7 @@ function dsi_vod_user_profile_box( $user ) {
     submit_button( __( 'Grant Access', 'woocommerce_vod' ), 'primary', '', false );
     echo '</form>';
     echo '</td></tr></tbody></table>';
+    echo '</div>';
 }
 
 /* ====================== Order edit screen ====================== */
