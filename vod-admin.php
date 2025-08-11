@@ -1,118 +1,201 @@
 <?php
-class WooCommerceVODSettingsPage
-{
-    /**
-     * Holds the values to be used in the fields callbacks
-     */
-    private $options;
+/**
+ * WooCommerce VOD — Settings Page (modernized)
+ * - PHP 8.2+ safe (no dynamic properties)
+ * - Uses WordPress Settings API with sanitize_callback
+ * - Escaped output and capability checks
+ * - Lets you choose a WooCommerce product category (product_cat) used for VOD
+ *
+ * Adds submenu under WooCommerce: WooCommerce → VOD Settings
+ */
 
-    /**
-     * Start up
-     */
-    public function __construct()
-    {
-        add_action( 'admin_menu', array( $this, 'add_plugin_page' ) );
-        add_action( 'admin_init', array( $this, 'page_init' ) );
-    }
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 
-    /**
-     * Add options page
-     */
-    public function add_plugin_page()
-    {
-        // This page will be under "Settings"
-        add_options_page(
-            'WooCommerce VOD Settings Admin', 
-            'WooCommerce VOD Settings', 
-            'manage_options', 
-            'vod-admin', 
-            array( $this, 'create_admin_page' )
-        );
-    }
+if ( ! class_exists( 'WooCommerce_VOD_Settings_Page' ) ) {
 
-    /**
-     * Options page callback
-     */
-    public function create_admin_page()
-    {
-        // Set class property
-        $this->options = get_option( 'vod_category_id' );
-        ?>
-        <div class="wrap">
-            <h2>WooCommerce VOD Settings</h2>           
-            <form method="post" action="options.php">
-            <?php
-                // This prints out all hidden setting fields
-                settings_fields( 'vod_category_group' );   
-                do_settings_sections( 'vod-admin' );
-                submit_button(); 
-            ?>
-            </form>
-        </div>
-        <?php
-    }
+    class WooCommerce_VOD_Settings_Page {
 
-    /**
-     * Register and add settings
-     */
-    public function page_init()
-    {        
-        register_setting(
-            'vod_category_group', // Option group
-            'vod_category_id', // Option name
-            array( $this, 'sanitize' ) // Sanitize
-        );
+        /** @var array<string,mixed> */
+        private array $options = [];
 
-        add_settings_section(
-            'setting_section_id', // ID
-            'Video-On-Demand Settings', // Title
-            array( $this, 'print_section_info' ), // Callback
-            'vod-admin' // Page
-        );  
+        public function __construct() {
+            // Load current option snapshot
+            $this->options = get_option( 'dsi_vod_settings', [] );
+            if ( ! is_array( $this->options ) ) {
+                $this->options = [];
+            }
 
-        add_settings_field(
-            'vod_category_id', // ID
-            'VOD Product Category ID', // Title 
-            array( $this, 'vod_category_id_callback' ), // Callback
-            'vod-admin', // Page
-            'setting_section_id' // Section           
-        );      
-    }
+            add_action( 'admin_menu', [ $this, 'add_plugin_page' ] );
+            add_action( 'admin_init', [ $this, 'page_init' ] );
+        }
 
-    /**
-     * Sanitize each setting field as needed
-     *
-     * @param array $input Contains all settings fields as array keys
-     */
-    public function sanitize( $input )
-    {
-        $new_input = array();
-        if( isset( $input['vod_category_id'] ) )
-            $new_input['vod_category_id'] = absint( $input['vod_category_id'] );
+        /**
+         * Add submenu under WooCommerce.
+         */
+        public function add_plugin_page(): void {
+            if ( ! current_user_can( 'manage_woocommerce' ) ) {
+                return;
+            }
+            add_submenu_page(
+                'woocommerce',
+                __( 'VOD Settings', 'woocommerce_vod' ),
+                __( 'VOD Settings', 'woocommerce_vod' ),
+                'manage_woocommerce',
+                'dsi-vod-settings',
+                [ $this, 'create_admin_page' ]
+            );
+        }
 
-        return $new_input;
-    }
+        /**
+         * Render settings page.
+         */
+        public function create_admin_page(): void {
+            if ( ! current_user_can( 'manage_woocommerce' ) ) {
+                wp_die( esc_html__( 'You do not have permission to access this page.', 'woocommerce_vod' ) );
+            }
 
-    /** 
-     * Print the Section text
-     */
-    public function print_section_info()
-    {
-        print 'Enter the product category ID number for Video-On-Demand:';
-    }
+            // Refresh snapshot (in case updates just happened)
+            $this->options = get_option( 'dsi_vod_settings', [] );
+            if ( ! is_array( $this->options ) ) {
+                $this->options = [];
+            }
 
-    /** 
-     * Get the settings option array and print one of its values
-     */
-    public function vod_category_id_callback()
-    {
-        printf(
-            '<input type="text" id="vod_category_id" name="vod_category_id[vod_category_id]" value="%s" />',
-            isset( $this->options['vod_category_id'] ) ? esc_attr( $this->options['vod_category_id']) : ''
-        );
+            echo '<div class="wrap">';
+            echo '<h1>' . esc_html__( 'WooCommerce VOD Settings', 'woocommerce_vod' ) . '</h1>';
+            echo '<form method="post" action="options.php">';
+
+            settings_fields( 'dsi_vod_settings_group' );
+            do_settings_sections( 'dsi-vod-settings-admin' );
+            submit_button();
+
+            echo '</form>';
+            echo '</div>';
+        }
+
+        /**
+         * Register settings, sections, and fields.
+         */
+        public function page_init(): void {
+
+            register_setting(
+                'dsi_vod_settings_group',
+                'dsi_vod_settings',
+                [
+                    'type'              => 'array',
+                    'sanitize_callback' => [ $this, 'sanitize' ],
+                    'default'           => [],
+                    'show_in_rest'      => false,
+                ]
+            );
+
+            add_settings_section(
+                'dsi_vod_main_section',
+                __( 'General', 'woocommerce_vod' ),
+                function () {
+                    echo '<p>' . esc_html__( 'Configure how your streaming video (VOD) products are organized and discovered.', 'woocommerce_vod' ) . '</p>';
+                },
+                'dsi-vod-settings-admin'
+            );
+
+            add_settings_field(
+                'vod_category_id',
+                __( 'VOD Product Category', 'woocommerce_vod' ),
+                [ $this, 'vod_category_field_cb' ],
+                'dsi-vod-settings-admin',
+                'dsi_vod_main_section',
+                [
+                    'label_for' => 'vod_category_id',
+                    'class'     => 'dsi-row',
+                ]
+            );
+
+            add_settings_field(
+                'vod_endpoint_slug',
+                __( 'My Account Endpoint Slug', 'woocommerce_vod' ),
+                [ $this, 'vod_endpoint_slug_field_cb' ],
+                'dsi-vod-settings-admin',
+                'dsi_vod_main_section',
+                [
+                    'label_for' => 'vod_endpoint_slug',
+                    'class'     => 'dsi-row',
+                ]
+            );
+        }
+
+        /**
+         * Sanitize all fields.
+         *
+         * @param mixed $input
+         * @return array<string,mixed>
+         */
+        public function sanitize( $input ): array {
+            $clean = [];
+
+            if ( is_array( $input ) ) {
+                // Category ID
+                if ( isset( $input['vod_category_id'] ) ) {
+                    $clean['vod_category_id'] = absint( $input['vod_category_id'] );
+                }
+
+                // Endpoint slug
+                if ( isset( $input['vod_endpoint_slug'] ) ) {
+                    $slug = sanitize_title( (string) $input['vod_endpoint_slug'] );
+                    $clean['vod_endpoint_slug'] = ( $slug !== '' ) ? $slug : 'vod';
+                }
+            }
+
+            return $clean;
+        }
+
+        /**
+         * Field: VOD category selector (product_cat terms).
+         */
+        public function vod_category_field_cb( array $args ): void {
+            $current = isset( $this->options['vod_category_id'] ) ? absint( $this->options['vod_category_id'] ) : 0;
+
+            // Fetch categories (can be large; limit depth for performance or implement AJAX select if needed)
+            $terms = get_terms( [
+                'taxonomy'   => 'product_cat',
+                'hide_empty' => false,
+                'number'     => 0,
+            ] );
+
+            echo '<select id="' . esc_attr( $args['label_for'] ) . '" name="dsi_vod_settings[vod_category_id]">';
+            echo '<option value="0">' . esc_html__( '— Select a category —', 'woocommerce_vod' ) . '</option>';
+
+            if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
+                foreach ( $terms as $term ) {
+                    if ( ! $term instanceof WP_Term ) { continue; }
+                    printf(
+                        '<option value="%d"%s>%s</option>',
+                        (int) $term->term_id,
+                        selected( $current, (int) $term->term_id, false ),
+                        esc_html( $term->name . ' (ID ' . $term->term_id . ')' )
+                    );
+                }
+            }
+
+            echo '</select>';
+            echo '<p class="description">' . esc_html__( 'Pick the WooCommerce category that groups your streaming videos.', 'woocommerce_vod' ) . '</p>';
+        }
+
+        /**
+         * Field: Endpoint slug for My Account page (align with my-account.php filter).
+         */
+        public function vod_endpoint_slug_field_cb( array $args ): void {
+            $slug = isset( $this->options['vod_endpoint_slug'] ) ? (string) $this->options['vod_endpoint_slug'] : 'vod';
+            echo '<input type="text" id="' . esc_attr( $args['label_for'] ) . '" name="dsi_vod_settings[vod_endpoint_slug]" value="' . esc_attr( $slug ) . '" class="regular-text" />';
+            echo '<p class="description">' . esc_html__( 'Slug used for the “Streaming Video” tab under My Account (e.g., vod).', 'woocommerce_vod' ) . '</p>';
+        }
     }
 }
 
-if( is_admin() )
-    $woocommerce_vod_page = new WooCommerceVODSettingsPage();
-
+// Bootstrap
+add_action( 'plugins_loaded', function() {
+    // Only load in admin
+    if ( is_admin() ) {
+        new WooCommerce_VOD_Settings_Page();
+    }
+} );

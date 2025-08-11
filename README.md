@@ -1,100 +1,126 @@
-# WooCommerce VOD Plugin
+# WooCommerce VOD (Video-On-Demand) Access Manager
 
-This WordPress plugin adds **Video on Demand (VOD)** capabilities to your WooCommerce store, allowing you to sell access to streaming video content directly through WooCommerce products.
-
-Built with ease of use and security in mind, the plugin provides an admin interface for uploading and managing video files, associates videos with WooCommerce products, and allows customers to stream purchased content from their account page.
-
----
-
-## 🎬 Features
-
-- Adds a new product type for Video on Demand (VOD)
-- Secure download or streaming links via shortcode and customer account page
-- Admin panel for uploading videos and associating them with products
-- Optional hiding of VOD content from product pages until purchased
-- Supports large file hosting externally or within WordPress
-- Designed to integrate natively with WooCommerce order handling
+A WordPress/WooCommerce plugin for selling and managing access to streaming video products (VODs).  
+Securely grants streaming access after purchase, protects video URLs, and lets administrators view, grant, or revoke access.
 
 ---
 
-## 📂 File Overview
+## Features
 
-| File                         | Description                                         |
-|------------------------------|-----------------------------------------------------|
-| `woocommerce-vod-plugin.php` | Main plugin loader and initializer                  |
-| `product-type.php`           | Registers custom WooCommerce product type "VOD"     |
-| `product.php`                | Adds video fields and logic to product editor       |
-| `custom-fields.php`          | Defines and handles extra product fields            |
-| `vod-admin.php`              | Admin interface to upload and manage VOD content    |
-| `woocommerce-vod-func.php`   | Core logic for accessing video content              |
-| `my-account.php`             | Displays purchased videos on the My Account page    |
-| `download-video.php`         | Secure video download/streaming handler             |
-| `hide.php`                   | Logic to restrict access to videos until purchased  |
-| `admin.php`                  | Adds plugin admin menu items                        |
-
----
-
-## 🚀 Installation
-
-1. Upload the plugin folder to `/wp-content/plugins/woocommerce-vod-plugin`
-2. Activate the plugin through the WordPress Plugins menu
-3. Ensure WooCommerce is installed and active
-4. Create a new product and set its type to **VOD**
-5. Upload your video file(s) via the **VOD Admin** menu or use external URLs
-6. Assign the video(s) to your VOD product
-7. Done! Users will get access to the video(s) in their account after purchase
+- **Automatic Access** – When a customer purchases a qualifying VOD product, access is automatically granted.
+- **WooCommerce Integration** – Hooks into order completion/payment events.
+- **Admin Access Management**
+  - Central **WooCommerce → VOD Access** page to search users/products and grant/revoke access.
+  - Integrated tools in **Order Admin** to check or adjust access for streaming video items.
+- **Customer Video Playback**
+  - Adds a **"Streaming Video"** tab to the product page for customers who purchased the video.
+  - Optional dedicated viewing page with embedded player.
+  - Supports secure playback (prevents direct file downloads).
+- **Secure Database Tracking** – All access records stored in a `wp_woocommerce_vod` table.
+- **Manual Overrides** – Grant or revoke access at any time from the admin.
+- **Reason Logging** – Store an admin-provided reason when revoking access.
+- **AJAX Search & Pagination** – Product and user selection fields use Select2 with AJAX for large catalogs.
 
 ---
 
-## 🧩 Shortcodes
+## Requirements
 
-You can use the following shortcode to manually display a VOD video:
+- WordPress 6.0+
+- WooCommerce 7.0+
+- PHP 7.4+ (PHP 8.1+ recommended)
+- MySQL 5.7+ or MariaDB 10+
 
-```php
-[vod_video id="123"]
+---
+
+## Installation
+
+1. Upload the plugin folder to:
+   ```
+   wp-content/plugins/woocommerce-vod
+   ```
+2. Activate the plugin in **Plugins → Installed Plugins**.
+3. Ensure WooCommerce is installed and active.
+4. Create at least one **VOD Product**:
+   - Set the product type to `vod` (or a variable product variation with VOD attributes).
+5. Configure your video hosting and embed settings in the plugin’s settings (if applicable).
+
+---
+
+## Usage
+
+### Selling a VOD Product
+- Create a WooCommerce product of type **VOD** or assign a VOD variation.
+- Once a customer purchases, the plugin inserts a record into `wp_woocommerce_vod` linking the user and product.
+- The **Streaming Video** tab will automatically appear for the customer on that product page.
+
+### Watching Purchased Videos
+- Customers can:
+  - Visit the product page after logging in.
+  - Or access a dedicated VOD viewing page (if enabled by admin).
+
+### Admin Management
+- Navigate to **WooCommerce → VOD Access** to:
+  - Search for a user/product.
+  - Grant or revoke streaming access.
+  - Provide a reason for revocations.
+- On the **WooCommerce Order Edit** page:
+  - See whether the customer has access to each streaming item.
+  - Grant or revoke access for the entire order.
+
+---
+
+## Database Table
+
+The plugin creates a custom table:
+
+```sql
+CREATE TABLE `wp_woocommerce_vod` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) unsigned NOT NULL,
+  `product_id` bigint(20) unsigned NOT NULL,
+  `ts` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_product` (`user_id`, `product_id`)
+) DEFAULT CHARSET=utf8mb4;
 ```
 
-Where `123` is the WooCommerce product ID.
+---
+
+## Security
+
+- Uses WooCommerce hooks for safe integration.
+- Prevents direct download links by embedding videos in a secure player.
+- Admin pages require `manage_woocommerce` capability.
+- Nonces used on all grant/revoke actions.
 
 ---
 
-## 🛡️ Security Notes
+## Developer Notes
 
-- Videos are only accessible to users who have purchased the associated product
-- Downloads/streams are handled through a secure PHP endpoint
-- You may optionally store videos outside the public directory
+### Hooks
+- `woocommerce_process_vod` – Handles VOD table inserts after payment completion.
+- `dsi_vod_has_access( $user_id, $product_id )` – Check if a user has access to a given product.
+- `dsi_vod_grant_access( $user_id, $product_id, $reason = '' )` – Programmatically grant access.
+- `dsi_vod_revoke_access( $user_id, $product_id, $reason = '' )` – Programmatically revoke access.
 
----
-
-## 🧑‍💻 Developer Notes
-
-This plugin hooks into several WooCommerce filters and actions:
-
-- `woocommerce_product_data_tabs`
-- `woocommerce_process_product_meta`
-- `woocommerce_account_menu_items`
-- `woocommerce_account_endpoint`
-
-Easily extendable and modular for custom workflows.
+### WP-CLI Commands
+(If enabled)
+- `wp vod backfill` – Scan past paid orders, grant missing VOD rows, report conflicts.
+- `wp vod check` – Compare VOD table to WooCommerce orders, list discrepancies.
 
 ---
 
-## 📌 Requirements
+## Changelog
 
-- WordPress 5.8+
-- WooCommerce 6.0+
-- PHP 7.4+
-
----
-
-## 📃 License
-
-This plugin is released under the [MIT License](LICENSE).
+### 1.0.0
+- Initial public release.
+- Automatic VOD access on purchase.
+- Admin VOD Access page with AJAX search.
+- Streaming Video product tab for purchasers.
+- Order page integration for access control.
 
 ---
 
-## 🧰 Credits
+## License
+GPL-2.0-or-later
 
-Developed by Michael Patrick.
-
-Feel free to contribute via pull request or reach out with suggestions or issues.

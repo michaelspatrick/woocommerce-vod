@@ -1,68 +1,79 @@
 <?php
-/*
-  // add a product type
-  function add_vod_product_type( $types ){
-    $types[ 'vod' ] = __( 'Video-On-Demand product' );
-    return $types;
-  }
-  add_filter( 'product_type_selector', 'add_vod_product_type' );
+/**
+ * Register and support the custom WooCommerce product type: VOD.
+ * - PHP 8+ / WooCommerce 8+ compatible
+ * - Uses product_type_selector + woocommerce_product_class
+ * - Class extends WC_Product_Simple
+ * - Adds admin JS to show VOD-related panels
+ */
 
-  // Create the VOD product type
-  function create_vod_product_type(){
-     // declare the product class
-     class WC_Product_Vod extends WC_Product{
-        public function __construct( $product ) {
-           $this->product_type = 'vod';
-           parent::__construct( $product );
-           // add additional functions here
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
+/**
+ * Add 'VOD' to the product type dropdown.
+ */
+add_filter( 'product_type_selector', function( $types ) {
+    $types['vod'] = __( 'VOD (Streaming Video)', 'woocommerce_vod' );
+    return $types;
+} );
+
+/**
+ * Map product type to a class that extends WC_Product_Simple.
+ */
+add_filter( 'woocommerce_product_class', function( $classname, $product_type ) {
+    if ( $product_type === 'vod' ) {
+        return 'WC_Product_Vod';
+    }
+    return $classname;
+}, 10, 2 );
+
+/**
+ * Define the product class for 'vod' products.
+ */
+if ( ! class_exists( 'WC_Product_Vod' ) ) {
+    class WC_Product_Vod extends WC_Product_Simple {
+        public function get_type() {
+            return 'vod';
         }
     }
-  }
-  //add_action( 'plugins_loaded', 'create_vod_product_type' );
-  add_action( 'init', 'create_vod_product_type' );
-*/
+}
 
-  // show pricing
-  function vod_custom_js() {
-	if ( 'product' != get_post_type() ) :
-		return;
-	endif;
-
-	?><script type='text/javascript'>
-		jQuery( document ).ready( function() {
-			jQuery( '.options_group.pricing' ).addClass( 'show_if_vod' ).show();
-		});
-	</script><?php
-  }
-  add_action( 'admin_footer', 'vod_custom_js' );
-
-  function showType(){
-    echo "<script>jQuery('.show_if_simple').addClass('show_if_vod');</script>";
-  }
-  add_action('woocommerce_product_options_general_product_data','showType');
-
-  // Show VOD tab in admin
-  function vod_product_tabs( $tabs) {
-	$tabs['vod'] = array(
-		'label'		=> __( 'Streaming Video', 'woocommerce' ),
-                'priority'      => 10,
-		'target'	=> 'vod_options',
-//		'class'		=> array( 'show_if_vod'),
-		'class'		=> array(),
-	);
-	return $tabs;
-  }
-  add_filter( 'woocommerce_product_data_tabs', 'vod_product_tabs' );
-
-  // hide unwanted tabs in admin
-  function hide_vod_unwanted_data_panels( $tabs) {
-	// Other default values for 'attribute' are:
-        // general, inventory, shipping, linked_product, variations, advanced
-	$tabs['attribute']['class'][] = 'hide_if_vod';
-	$tabs['shipping']['class'][] = 'hide_if_vod';
-	//$tabs['inventory']['class'][] = 'hide_if_vod';
-	return $tabs;
-
-  }
-  add_filter( 'woocommerce_product_data_tabs', 'hide_vod_unwanted_data_panels' );
-?>
+/**
+ * Admin: ensure panels/fields show for VOD products.
+ * This mirrors how WooCommerce toggles panels via CSS classes like show_if_simple.
+ */
+add_action( 'admin_footer', function () {
+    $screen = get_current_screen();
+    if ( ! $screen || 'product' !== $screen->id ) {
+        return;
+    }
+    ?>
+    <script type="text/javascript">
+    jQuery(function($){
+        function dsiVodTogglePanels(){
+            var isVOD = ($('#product-type').val() === 'vod');
+            // Show standard panels used by simple products when VOD is selected.
+            var classes = [
+                '.show_if_simple',
+                '.pricing', // pricing group
+                '.inventory_options',
+                '.shipping_options',
+                '.linked_product_options',
+                '.attribute_options',
+                '.advanced_options'
+            ];
+            // Toggle WooCommerce's native "show_if_vod" class as well.
+            $('.show_if_vod').toggle(isVOD);
+            // Also show typical simple-product sections for convenience when VOD is selected.
+            classes.forEach(function(sel){
+                $(sel).toggle(isVOD);
+            });
+        }
+        $('#product-type').on('change', dsiVodTogglePanels);
+        dsiVodTogglePanels();
+    });
+    </script>
+    <?php
+} );
