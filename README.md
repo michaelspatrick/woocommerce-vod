@@ -41,7 +41,6 @@ Securely grants streaming access after purchase, protects video URLs, and lets a
 2. Activate the plugin in **Plugins → Installed Plugins**.
 3. Ensure WooCommerce is installed and active.
 4. Create at least one **VOD Product**:
-   - Set the product type to `vod` (or a variable product variation with VOD attributes).
 5. Configure your video hosting and embed settings in the plugin’s settings (if applicable).
 
 ---
@@ -49,7 +48,7 @@ Securely grants streaming access after purchase, protects video URLs, and lets a
 ## Usage
 
 ### Selling a VOD Product
-- Create a WooCommerce product of type **VOD** or assign a VOD variation.
+- Assign a VOD variation.
 - Once a customer purchases, the plugin inserts a record into `wp_woocommerce_vod` linking the user and product.
 - The **Streaming Video** tab will automatically appear for the customer on that product page.
 

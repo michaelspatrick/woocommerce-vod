@@ -1,12 +1,6 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-// Register VOD product type
-add_filter( 'product_type_selector', function ( $types ) {
-    $types['vod'] = __( 'VOD (Streaming Video)', 'woocommerce_vod' );
-    return $types;
-} );
-
 add_filter( 'woocommerce_product_class', function( $classname, $product_type ) {
     if ( $product_type === 'vod' ) {
         $classname = 'WC_Product_VOD';
@@ -40,7 +34,7 @@ add_action( 'woocommerce_product_data_panels', function () {
 
     woocommerce_wp_text_input( array(
     'id' => '_video_url',
-    'label' => __( '_video_url', 'woocommerce_vod' ),
+    'label' => __( 'Video URL', 'woocommerce_vod' ),
     'desc_tip' => true,
     'description' => __( '', 'woocommerce_vod' ),
     'wrapper_class' => 'show_if_vod',
@@ -48,7 +42,7 @@ add_action( 'woocommerce_product_data_panels', function () {
 
     woocommerce_wp_text_input( array(
     'id' => '_video_poster',
-    'label' => __( '_video_poster', 'woocommerce_vod' ),
+    'label' => __( 'Video Poster', 'woocommerce_vod' ),
     'desc_tip' => true,
     'description' => __( '', 'woocommerce_vod' ),
     'wrapper_class' => 'show_if_vod',
@@ -56,7 +50,7 @@ add_action( 'woocommerce_product_data_panels', function () {
 
     woocommerce_wp_text_input( array(
     'id' => '_duration_formatted',
-    'label' => __( '_duration_formatted', 'woocommerce_vod' ),
+    'label' => __( 'Duration (formatted HH:MM:SS or MM:SS)', 'woocommerce_vod' ),
     'desc_tip' => true,
     'description' => __( '', 'woocommerce_vod' ),
     'wrapper_class' => 'show_if_vod',
@@ -84,23 +78,4 @@ add_action( 'init', function() {
     register_post_meta( 'product', '_video_poster', array('single'=>true,'type'=>'string','show_in_rest'=>true,'auth_callback'=>function(){return current_user_can('manage_woocommerce');},) );
     register_post_meta( 'product', '_duration_formatted', array('single'=>true,'type'=>'string','show_in_rest'=>true,'auth_callback'=>function(){return current_user_can('manage_woocommerce');},) );
 } );
-
-/**
- * Admin JS to toggle VOD panel visibility.
- */
-add_action( 'admin_footer', function () {
-    $screen = get_current_screen();
-    if ( ! $screen || 'product' !== $screen->id ) { return; }
-    ?>
-    <script type="text/javascript">
-    jQuery(function($){
-        function dsiToggleVOD() {
-            var isVOD = $('#product-type').val() === 'vod';
-            $('.show_if_vod').toggle( isVOD );
-        }
-        $('#product-type').on('change', dsiToggleVOD);
-        dsiToggleVOD();
-    });
-    </script>
-    <?php
-} );
+?>

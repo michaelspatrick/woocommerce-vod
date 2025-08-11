@@ -1,19 +1,22 @@
 <?php
 /**
- * Admin UI: VOD Access Manager (Select2 + Pagination + Revoke Reason + Audit + Order Meta Box)
- *
- * - WooCommerce → VOD Access page (product autocomplete via Woo's built-in AJAX, pagination)
+ * Admin UI: VOD Access Manager
+ * - WooCommerce → VOD Access admin page (AJAX product search, pagination)
  * - User Profile box (grant/revoke)
- * - Order edit screen meta box: verify/grant/revoke access for VOD items in the order (per-item & bulk), with "Reason"
+ * - Order edit screen meta box (status + Grant All / Revoke All only)
+ * - Audit table (grants/revokes with reason)
+ * - Uses ONLY `ts` column in wp_woocommerce_vod
+ * - All CSS moved to vod.css (enqueue below)
  */
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-/* ========= Helpers & Tables ========= */
+/* ====================== Helpers & Tables ====================== */
 
 if ( ! function_exists( 'dsi_vod_table_name' ) ) {
     function dsi_vod_table_name() { global $wpdb; return $wpdb->prefix . 'woocommerce_vod'; }
 }
+
 if ( ! function_exists( 'dsi_vod_audit_table_name' ) ) {
     function dsi_vod_audit_table_name() { global $wpdb; return $wpdb->prefix . 'woocommerce_vod_audit'; }
 }
@@ -28,7 +31,7 @@ add_action( 'admin_init', function() {
         action VARCHAR(20) NOT NULL, /* grant|revoke */
         reason TEXT NULL,
         actor_id BIGINT UNSIGNED NOT NULL,
-        ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         KEY idx_user (user_id),
         KEY idx_product (product_id),
         KEY idx_action (action)
@@ -43,7 +46,7 @@ if ( ! function_exists( 'dsi_vod_find_user' ) ) {
         if ( $needle === '' ) return null;
         if ( ctype_digit( $needle ) ) { $u = get_user_by( 'id', (int) $needle ); if ( $u ) return $u; }
         if ( is_email( $needle ) ) { $u = get_user_by( 'email', $needle ); if ( $u ) return $u; }
-        return get_user_by( 'login', $needle ); // may be null
+        return get_user_by( 'login', $needle );
     }
 }
 
@@ -58,41 +61,49 @@ if ( ! function_exists( 'dsi_vod_has_access' ) ) {
         return ( $has === 1 );
     }
 }
+
+if ( ! function_exists( 'dsi_vod_audit' ) ) {
+    function dsi_vod_audit( int $user_id, int $product_id, string $action, string $reason = '' ): void {
+        global $wpdb;
+        $wpdb->insert(
+            dsi_vod_audit_table_name(),
+            array(
+                'user_id'    => $user_id,
+                'product_id' => $product_id,
+                'action'     => sanitize_key( $action ),
+                'reason'     => $reason,
+                'actor_id'   => (int) get_current_user_id(),
+            ),
+            array( '%d','%d','%s','%s','%d' )
+        );
+    }
+}
+
 if ( ! function_exists( 'dsi_vod_grant' ) ) {
     function dsi_vod_grant( int $user_id, int $product_id, string $reason = '' ): bool {
-        global $wpdb; $table = dsi_vod_table_name();
-        $ok = $wpdb->insert( $table, array( 'user_id' => $user_id, 'product_id' => $product_id ), array( '%d','%d' ) );
+        global $wpdb;
+        $ok = $wpdb->insert( dsi_vod_table_name(), array( 'user_id' => $user_id, 'product_id' => $product_id ), array( '%d','%d' ) );
         dsi_vod_audit( $user_id, $product_id, 'grant', $reason );
         return $ok !== false;
     }
 }
+
 if ( ! function_exists( 'dsi_vod_revoke' ) ) {
     function dsi_vod_revoke( int $user_id, int $product_id, string $reason = '' ): bool {
-        global $wpdb; $table = dsi_vod_table_name();
-        $ok = $wpdb->delete( $table, array( 'user_id' => $user_id, 'product_id' => $product_id ), array( '%d','%d' ) );
+        global $wpdb;
+        $ok = $wpdb->delete( dsi_vod_table_name(), array( 'user_id' => $user_id, 'product_id' => $product_id ), array( '%d','%d' ) );
         dsi_vod_audit( $user_id, $product_id, 'revoke', $reason );
         return $ok !== false;
     }
 }
-if ( ! function_exists( 'dsi_vod_audit' ) ) {
-    function dsi_vod_audit( int $user_id, int $product_id, string $action, string $reason = '' ) {
-        global $wpdb;
-        $wpdb->insert( dsi_vod_audit_table_name(), array(
-            'user_id'    => $user_id,
-            'product_id' => $product_id,
-            'action'     => sanitize_key( $action ),
-            'reason'     => $reason,
-            'actor_id'   => (int) get_current_user_id(),
-        ), array( '%d','%d','%s','%s','%d' ) );
-    }
-}
+
 if ( ! function_exists( 'dsi_vod_get_user_vods_paginated' ) ) {
     function dsi_vod_get_user_vods_paginated( int $user_id, int $page, int $per_page ): array {
-        global $wpdb; $table = dsi_vod_table_name();
+        global $wpdb;
         $offset = max( 0, ($page - 1) * $per_page );
         $rows = $wpdb->get_results( $wpdb->prepare(
             "SELECT SQL_CALC_FOUND_ROWS product_id, ts
-             FROM {$table}
+             FROM " . dsi_vod_table_name() . "
              WHERE user_id=%d
              ORDER BY ts DESC
              LIMIT %d OFFSET %d",
@@ -103,11 +114,9 @@ if ( ! function_exists( 'dsi_vod_get_user_vods_paginated' ) ) {
     }
 }
 
-/* ========= Detect VOD items in an order ========= */
-
+/* Detect if an order line is a VOD */
 if ( ! function_exists( 'dsi_vod_is_order_item_vod' ) ) {
     function dsi_vod_is_order_item_vod( WC_Order_Item_Product $item ): bool {
-        // Prefer line item meta (variation attribute) first
         foreach ( array( 'attribute_pa_video_format', 'pa_video_format' ) as $k ) {
             $v = (string) $item->get_meta( $k, true );
             if ( $v !== '' ) {
@@ -115,13 +124,90 @@ if ( ! function_exists( 'dsi_vod_is_order_item_vod' ) ) {
                 if ( $v === 'video_format_streaming' || $v === 'video_format_dvd_plus_streaming' ) return true;
             }
         }
-        // Fallback: product type "vod"
         $product = $item->get_product();
         return ( $product instanceof WC_Product && $product->get_type() === 'vod' );
     }
 }
 
-/* ========= Admin menus, assets & CSS ========= */
+/* ====================== Assets (enqueue CSS/JS) ====================== */
+
+add_action( 'admin_enqueue_scripts', function( $hook ) {
+    // Only load on our access page, user profile/edit, and order edit/new
+    $screens = array( 'woocommerce_page_dsi-vod-access', 'user-edit.php', 'profile.php', 'post.php', 'post-new.php' );
+
+    if ( ! in_array( $hook, $screens, true ) ) {
+        return;
+    }
+
+    // If we're on post.php or post-new.php, make sure it's for orders, not products.
+    if ( $hook === 'post.php' || $hook === 'post-new.php' ) {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if ( $screen && $screen->post_type !== 'shop_order' ) {
+            // Bail on product edit pages to avoid interfering with Woo’s product UI
+            return;
+        }
+    }
+
+    if ( function_exists( 'WC' ) ) {
+        wp_enqueue_script( 'selectWoo' );
+        wp_enqueue_style( 'select2' );
+        wp_enqueue_script( 'wc-enhanced-select' );
+        wp_enqueue_style( 'woocommerce_admin_styles' );
+    }
+
+    wp_enqueue_style(
+        'dsi-vod-admin',
+        plugins_url( 'assets/css/vod.css', __FILE__ ),
+        array(),
+        '1.0.0'
+    );
+});
+
+/* Init selectWoo on pages where we render product pickers using Woo's endpoint */
+add_action( 'admin_footer', function() {
+    $screen = get_current_screen();
+    if ( ! $screen ) return;
+    if ( ! in_array( $screen->id, array( 'woocommerce_page_dsi-vod-access', 'user-edit', 'profile', 'shop_order' ), true ) ) return;
+    ?>
+<script>
+(function($){
+    function init($ctx){
+        $ctx.find('.wc-product-search').filter(':not(.enhanced)').each(function(){
+            var $el=$(this);
+            $el.addClass('enhanced').selectWoo({
+                minimumInputLength: 2,
+                allowClear: true,
+                placeholder: $el.attr('data-placeholder') || '<?php echo esc_js( __( 'Search for a product…', 'woocommerce_vod' ) ); ?>',
+                ajax: {
+                    url: '<?php echo esc_js( admin_url( 'admin-ajax.php' ) ); ?>',
+                    dataType: 'json',
+                    delay: 250,
+                    data: function(params){
+                        return {
+                            term: params.term || '',
+                            action: 'woocommerce_json_search_products_and_variations',
+                            security: '<?php echo esc_js( wp_create_nonce( 'search-products' ) ); ?>'
+                        };
+                    },
+                    processResults: function(data){
+                        var results=[];
+                        if (data && data.results){
+                            $.each(data.results, function(id, text){ results.push({id:id, text:text}); });
+                        }
+                        return {results:results};
+                    },
+                    cache: true
+                }
+            });
+        });
+    }
+    $(document).ready(function(){ init($(document)); });
+})(jQuery);
+</script>
+<?php
+} );
+
+/* ====================== Admin Menu (VOD Access) ====================== */
 
 add_action( 'admin_menu', function() {
     add_submenu_page(
@@ -133,126 +219,6 @@ add_action( 'admin_menu', function() {
         'dsi_vod_render_access_page'
     );
 } );
-
-add_action( 'admin_enqueue_scripts', function( $hook ) {
-    // Load Woo's selectWoo on both our page and the user edit page
-    if ( in_array( $hook, array( 'woocommerce_page_dsi-vod-access', 'user-edit.php', 'profile.php', 'post.php' ), true ) ) {
-        if ( function_exists( 'WC' ) ) {
-            wp_enqueue_script( 'selectWoo' );
-            wp_enqueue_style( 'select2' );
-            wp_enqueue_script( 'wc-enhanced-select' );
-            wp_enqueue_style( 'woocommerce_admin_styles' );
-        }
-
-add_action( 'admin_head', function() {
-    $screen = get_current_screen();
-    ?>
-    <style>
-        /* Ensure product search select is wide on the VOD Access page */
-        .woocommerce_page_dsi-vod-access .select2-container {
-            min-width: 450px !important;
-            max-width: 800px !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-        }
-
-        /* Make the select field itself expand */
-        .woocommerce_page_dsi-vod-access .wc-product-search {
-            width: 100% !important;
-            max-width: 800px;
-        }
-    </style>
-    <?php
-} );
-
-add_action( 'admin_head', function() {
-    ?>
-        <style>
-          /* Scope to the VOD meta box on the Order edit screen */
-          .post-type-shop_order #dsi_vod_order_access .dsi-vod-meta .dsi-inline-form {
-            display: block !important;
-            width: 100% !important;
-            margin: 6px 0 !important;
-          }
-
-          .post-type-shop_order #dsi_vod_order_access .dsi-reason,
-          .post-type-shop_order #dsi_vod_order_access .vod-reason-field,
-          .post-type-shop_order #dsi_vod_order_access input[type="text"].dsi-reason,
-          .post-type-shop_order #dsi_vod_order_access textarea.vod-reason-field {
-            width: 100% !important;
-            max-width: 100% !important;
-            box-sizing: border-box !important;
-           }
-
-           /* Keep buttons from forcing horizontal overflow */
-           .post-type-shop_order #dsi_vod_order_access .dsi-inline-form .button,
-           .post-type-shop_order #dsi_vod_order_access .dsi-inline-form .button-primary,
-           .post-type-shop_order #dsi_vod_order_access .dsi-inline-form .button-secondary {
-             margin-top: 6px !important;
-             width: auto;
-           }
-
-           /* Make Select2 fit the meta box too */
-           .post-type-shop_order #dsi_vod_order_access .select2-container {
-             width: 100% !important;
-             min-width: 0 !important;
-             max-width: 100% !important;
-             box-sizing: border-box !important;
-           }
-
-           /* Optional: tighten the table so fields don’t wrap oddly */
-           .post-type-shop_order #dsi_vod_order_access .widefat td,
-           .post-type-shop_order #dsi_vod_order_access .widefat th {
-              padding: 6px 8px;
-            }
-
-            /* Small screens fallback */
-            @media (max-width: 782px) {
-              .post-type-shop_order #dsi_vod_order_access .dsi-reason { font-size: 14px; }
-            }
-          </style>
-          <?php
-        });
-
-
-        // Inline JS to init selectWoo with Woo's built-in search endpoint
-        add_action( 'admin_footer', function() use ( $hook ) {
-          ?>
-<script>
-(function($){
-    function init($ctx){ $ctx.find('.wc-product-search').filter(':not(.enhanced)').each(function(){
-        var $el=$(this);
-        $el.addClass('enhanced').selectWoo({
-            minimumInputLength: 2,
-            allowClear: true,
-            placeholder: $el.attr('data-placeholder') || '<?php echo esc_js( __( 'Search for a product…', 'woocommerce_vod' ) ); ?>',
-            ajax: {
-                url: '<?php echo esc_js( admin_url( 'admin-ajax.php' ) ); ?>',
-                dataType: 'json',
-                delay: 250,
-                data: function(params){
-                    return { term: params.term || '', action: 'woocommerce_json_search_products_and_variations', security: '<?php echo esc_js( wp_create_nonce( 'search-products' ) ); ?>' };
-                },
-                processResults: function(data){
-                    var results=[];
-                    if (data && data.results){
-                        $.each(data.results, function(id, text){ results.push({id:id, text:text}); });
-                    }
-                    return {results:results};
-                },
-                cache: true
-            }
-        });
-    });}
-    $(document).ready(function(){ init($(document)); });
-})(jQuery);
-</script>
-            <?php
-        } );
-    }
-} );
-
-/* ========= Admin page: WooCommerce → VOD Access ========= */
 
 function dsi_vod_render_access_page() {
     if ( ! current_user_can( 'manage_woocommerce' ) ) { wp_die( esc_html__( 'You do not have permission to access this page.', 'woocommerce_vod' ) ); }
@@ -320,7 +286,7 @@ function dsi_vod_render_access_page() {
                 echo '<input type="hidden" name="user_id" value="' . esc_attr( $user->ID ) . '" />';
                 echo '<input type="hidden" name="product_id" value="' . esc_attr( $pid ) . '" />';
                 wp_nonce_field( 'dsi_vod_revoke_' . $user->ID . '_' . $pid );
-                echo '<input type="text" class="regular-text dsi-reason" name="reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
+                echo '<input type="text" class="regular-text vod-reason-field" name="reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
                 submit_button( __( 'Revoke', 'woocommerce_vod' ), 'secondary', '', false );
                 echo '</form>';
                 echo '</td>';
@@ -347,7 +313,7 @@ function dsi_vod_render_access_page() {
         echo '<input type="hidden" name="user_id" value="' . esc_attr( $user->ID ) . '" />';
         wp_nonce_field( 'dsi_vod_grant_' . $user->ID );
         printf( '<select name="product_id" class="wc-product-search dsi-field" data-placeholder="%s" data-allow_clear="true" required></select> ', esc_attr__( 'Search for a product…', 'woocommerce_vod' ) );
-        echo '<input type="text" name="reason" class="regular-text dsi-reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
+        echo '<input type="text" name="reason" class="regular-text vod-reason-field" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
         submit_button( __( 'Grant Access', 'woocommerce_vod' ), 'primary', '', false );
         echo '</form>';
     }
@@ -366,7 +332,7 @@ function dsi_vod_render_access_page() {
         echo '<input type="hidden" name="user_id" value="' . esc_attr( $user->ID ) . '" />';
         echo '<input type="hidden" name="product_id" value="' . esc_attr( $product->get_id() ) . '" />';
         wp_nonce_field( 'dsi_vod_grant_' . $user->ID );
-        echo '<input type="text" name="reason" class="regular-text dsi-reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
+        echo '<input type="text" name="reason" class="regular-text vod-reason-field" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
         submit_button( __( 'Grant', 'woocommerce_vod' ), 'primary', '', false );
         echo '</form>';
         // Quick REVOKE
@@ -375,7 +341,7 @@ function dsi_vod_render_access_page() {
         echo '<input type="hidden" name="user_id" value="' . esc_attr( $user->ID ) . '" />';
         echo '<input type="hidden" name="product_id" value="' . esc_attr( $product->get_id() ) . '" />';
         wp_nonce_field( 'dsi_vod_revoke_' . $user->ID . '_' . $product->get_id() );
-        echo '<input type="text" name="reason" class="regular-text dsi-reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
+        echo '<input type="text" name="reason" class="regular-text vod-reason-field" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
         submit_button( __( 'Revoke', 'woocommerce_vod' ), 'secondary', '', false );
         echo '</form>';
         echo '</p>';
@@ -384,7 +350,7 @@ function dsi_vod_render_access_page() {
     echo '</div>';
 }
 
-/* ========= Form handlers ========= */
+/* ====================== Form handlers ====================== */
 
 add_action( 'admin_post_dsi_vod_grant', function() {
     if ( ! current_user_can( 'manage_woocommerce' ) ) wp_die( 'Forbidden', 403 );
@@ -410,7 +376,7 @@ add_action( 'admin_post_dsi_vod_revoke', function() {
     wp_safe_redirect( add_query_arg( 'dsi_msg', rawurlencode( $msg ), $back ) ); exit;
 } );
 
-/* ========= User Profile box ========= */
+/* ====================== User Profile box ====================== */
 
 add_action( 'show_user_profile', 'dsi_vod_user_profile_box' );
 add_action( 'edit_user_profile', 'dsi_vod_user_profile_box' );
@@ -443,7 +409,7 @@ function dsi_vod_user_profile_box( $user ) {
             echo '<input type="hidden" name="user_id" value="' . esc_attr( $user->ID ) . '" />';
             echo '<input type="hidden" name="product_id" value="' . esc_attr( $pid ) . '" />';
             wp_nonce_field( 'dsi_vod_revoke_' . $user->ID . '_' . $pid );
-            echo '<input type="text" name="reason" class="regular-text dsi-reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
+            echo '<input type="text" name="reason" class="regular-text vod-reason-field" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
             submit_button( __( 'Revoke', 'woocommerce_vod' ), 'secondary', '', false );
             echo '</form>';
             echo '</td>';
@@ -459,13 +425,13 @@ function dsi_vod_user_profile_box( $user ) {
     echo '<input type="hidden" name="user_id" value="' . esc_attr( $user->ID ) . '" />';
     wp_nonce_field( 'dsi_vod_grant_' . $user->ID );
     printf( '<select name="product_id" class="wc-product-search dsi-field" data-placeholder="%s" data-allow_clear="true" required></select> ', esc_attr__( 'Search for a product…', 'woocommerce_vod' ) );
-    echo '<input type="text" name="reason" class="regular-text dsi-reason" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
+    echo '<input type="text" name="reason" class="regular-text vod-reason-field" placeholder="' . esc_attr__( 'Reason (optional)', 'woocommerce_vod' ) . '" /> ';
     submit_button( __( 'Grant Access', 'woocommerce_vod' ), 'primary', '', false );
     echo '</form>';
     echo '</td></tr></tbody></table>';
 }
 
-/* ========= Order edit screen meta box ========= */
+/* ====================== Order edit screen ====================== */
 
 add_action( 'add_meta_boxes', function() {
     add_meta_box(
@@ -473,7 +439,7 @@ add_action( 'add_meta_boxes', function() {
         __( 'VOD Access', 'woocommerce_vod' ),
         'dsi_vod_render_order_meta_box',
         'shop_order',
-        'side', // or 'normal' if you want more space
+        'side',
         'high'
     );
 } );
@@ -486,12 +452,10 @@ function dsi_vod_render_order_meta_box( WP_Post $post ) {
     $user_id = (int) $order->get_user_id();
     if ( ! $user_id ) { echo '<p>'.esc_html__( 'Guest order (no user).', 'woocommerce_vod' ).'</p>'; return; }
 
-    // Collect VOD items (variation id if present, else product id)
     $vod_items = array();
     foreach ( $order->get_items() as $item ) {
         if ( ! $item instanceof WC_Order_Item_Product ) continue;
         if ( ! dsi_vod_is_order_item_vod( $item ) ) continue;
-
         $pid = (int) ( $item->get_variation_id() ?: $item->get_product_id() );
         if ( $pid && ! isset( $vod_items[ $pid ] ) ) {
             $vod_items[ $pid ] = array(
@@ -504,34 +468,25 @@ function dsi_vod_render_order_meta_box( WP_Post $post ) {
     if ( empty( $vod_items ) ) { echo '<p>'.esc_html__( 'No streaming videos detected in this order.', 'woocommerce_vod' ).'</p>'; return; }
 
     echo '<div class="dsi-vod-meta">';
-
-    echo '<table class="widefat striped"><thead><tr>';
-    echo '<th>'.esc_html__( 'Item', 'woocommerce_vod' ).'</th>';
-    echo '<th>'.esc_html__( 'Access', 'woocommerce_vod' ).'</th>';
-    echo '</tr></thead><tbody>';
-
+    echo '<table class="widefat striped"><thead><tr><th>'.esc_html__( 'Item', 'woocommerce_vod' ).'</th><th>'.esc_html__( 'Access', 'woocommerce_vod' ).'</th></tr></thead><tbody>';
     foreach ( $vod_items as $pid => $row ) {
         echo '<tr>';
         echo '<td>'.esc_html( $row['title'] ).' (#'.(int)$pid.')</td>';
-        echo '<td>'.( $row['has']
-            ? '<span style="color:#1f7a3d">'.esc_html__( 'Granted', 'woocommerce_vod' ).'</span>'
-            : '<span style="color:#b00">'.esc_html__( 'Not granted', 'woocommerce_vod' ).'</span>'
-        ).'</td>';
+        echo '<td>'.( $row['has'] ? '<span style="color:#1f7a3d">'.esc_html__( 'Granted', 'woocommerce_vod' ).'</span>' : '<span style="color:#b00">'.esc_html__( 'Not granted', 'woocommerce_vod' ).'</span>' ).'</td>';
         echo '</tr>';
     }
     echo '</tbody></table>';
 
-    // Bulk grant/revoke for all VOD items in this order
     echo '<h4>'.esc_html__( 'Bulk action (all VOD items)', 'woocommerce_vod' ).'</h4>';
     echo '<form method="post" action="'.esc_url( admin_url('admin-post.php') ).'" class="dsi-inline-form">';
     echo '<input type="hidden" name="action" value="dsi_vod_order_bulk" />';
     echo '<input type="hidden" name="order_id" value="'.esc_attr( $order->get_id() ).'" />';
     echo '<input type="hidden" name="user_id" value="'.esc_attr( $user_id ).'" />';
-    foreach ( array_keys( $vod_items ) as $pid ) {
+    foreach ( array_keys($vod_items) as $pid ) {
         echo '<input type="hidden" name="product_ids[]" value="'.esc_attr( $pid ).'" />';
     }
     wp_nonce_field( 'dsi_vod_order_bulk_'.$order->get_id() );
-    echo '<input type="text" name="reason" class="regular-text dsi-reason" placeholder="'.esc_attr__( 'Reason (optional)', 'woocommerce_vod' ).'" /> ';
+    echo '<input type="text" name="reason" class="regular-text vod-reason-field" placeholder="'.esc_attr__( 'Reason (optional)', 'woocommerce_vod' ).'" /> ';
     submit_button( __( 'Grant All', 'woocommerce_vod' ), 'primary', 'grant_all', false );
     echo ' ';
     submit_button( __( 'Revoke All', 'woocommerce_vod' ), 'secondary', 'revoke_all', false );
@@ -540,14 +495,12 @@ function dsi_vod_render_order_meta_box( WP_Post $post ) {
     echo '</div>';
 }
 
-/* ========= Order actions handlers ========= */
-
-// Bulk: grant_all or revoke_all buttons
+/* Order bulk actions handler */
 add_action( 'admin_post_dsi_vod_order_bulk', function() {
     if ( ! current_user_can( 'manage_woocommerce' ) ) wp_die( 'Forbidden', 403 );
     $order_id   = isset($_POST['order_id']) ? (int) $_POST['order_id'] : 0;
     $user_id    = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
-    $product_ids = isset($_POST['product_ids']) ? array_map( 'intval', (array) $_POST['product_ids'] ) : array();
+    $product_ids= isset($_POST['product_ids']) ? array_map( 'intval', (array) $_POST['product_ids'] ) : array();
     $reason     = isset($_POST['reason']) ? sanitize_text_field( wp_unslash($_POST['reason']) ) : '';
     check_admin_referer( 'dsi_vod_order_bulk_'.$order_id );
     $back = wp_get_referer() ?: admin_url( 'post.php?post='.$order_id.'&action=edit' );
@@ -570,4 +523,5 @@ add_action( 'admin_post_dsi_vod_order_bulk', function() {
                      : sprintf( _n( '%d item revoked.', '%d items revoked.', $ok, 'woocommerce_vod' ), $ok );
     wp_safe_redirect( add_query_arg( 'dsi_msg', rawurlencode( $msg ), $back ) ); exit;
 } );
+
 

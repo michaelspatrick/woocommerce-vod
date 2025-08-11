@@ -99,15 +99,13 @@ add_action( 'plugins_loaded', function() {
     dsi_vod_safe_require( 'woocommerce-vod-func.php' );
 
     // Product type/class
-    dsi_vod_safe_require( 'product-type.php' );
+    //dsi_vod_safe_require( 'product-type.php' );
 
     // Product admin custom fields
     dsi_vod_safe_require( 'custom-fields.php' );
  
     // Frontend product tab
     dsi_vod_safe_require( 'product.php' );
-    //dsi_vod_safe_require( 'product.tab.owners.php' );
-    //dsi_vod_safe_require( 'product.tab.owners.noredirect.php' );
 
     // My Account endpoint
     dsi_vod_safe_require( 'my-account.php' );
@@ -117,9 +115,6 @@ add_action( 'plugins_loaded', function() {
 
     // Secure streaming/guarded download handler
     dsi_vod_safe_require( 'download-video.php' );
-
-    // Admin list + CRUD for VOD grants
-    //dsi_vod_safe_require( 'admin.php' );
 
     // Settings page
     dsi_vod_safe_require( 'vod-admin.php' );
