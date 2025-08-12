@@ -63,7 +63,7 @@ if ( ! function_exists( 'dsi_vod_activate' ) ) {
  */
 add_filter( 'woocommerce_account_menu_items', function( $items ) {
     $endpoint   = dsi_vod_get_endpoint();
-    $label      = apply_filters( 'dsi_vod_menu_label', __( 'Streaming Video', 'woocommerce_vod' ) );
+    $label      = apply_filters( 'dsi_vod_menu_label', __( '🎬 Streaming video', 'woocommerce_vod' ) );
     $position   = (int) apply_filters( 'dsi_vod_menu_position', 5 );
 
     // Build new pair

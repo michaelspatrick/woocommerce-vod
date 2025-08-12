@@ -81,19 +81,35 @@ if ( ! function_exists( 'dsi_vod_render_product_tab_guarded' ) ) {
             return;
         }
 
-        $token = dsi_vod_build_token( get_current_user_id(), $product->get_id(), apply_filters('dsi_vod_token_ttl', 300, $product->get_id(), get_current_user_id() ) );
-        $src = add_query_arg( array( 'dsi_vod_stream' => 1, 't' => rawurlencode( $token ) ), home_url('/') );
+        // Resolve the direct media URL (same keys as your watch page)
+        $src = '';
+        if ( function_exists( 'dsi_vod_resolve_stream_url' ) ) {
+          $src = (string) dsi_vod_resolve_stream_url( $product );
+        }
+
+        if ( ! $src ) {
+          // Fallback keys if your resolver isn't present
+          foreach ( ['_vod_stream_url','_video_url','_video_src','_stream_url','_vod_mp4_url','_vod_s3_url','_dsi_vod_stream_url'] as $k ) {
+            $v = (string) $product->get_meta( $k, true );
+            if ( $v ) { $src = $v; break; }
+          }
+        }
+
+        if ( ! $src ) {
+            echo '<p>' . esc_html__( 'Video not configured for this product.', 'woocommerce_vod' ) . '</p>';
+            return;
+        }
 
         $attrs = array(
             'controls' => true,
-            'preload'  => 'metadata',
+            'preload'  => 'auto',
             'playsinline' => true,
             'controlsList' => 'nodownload noplaybackrate',
             'disablepictureinpicture' => true,
-            'crossorigin' => 'anonymous',
             'style'    => 'max-width:100%;height:auto;',
             'oncontextmenu' => 'return false;'
         );
+
         $attr_html = '';
         foreach ($attrs as $k=>$v) { $attr_html .= is_bool($v) ? ( $v ? ' ' . esc_attr($k) : '' ) : ' ' . esc_attr($k) . '="' . esc_attr((string)$v) . '"'; }
 
