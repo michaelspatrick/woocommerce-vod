@@ -1,0 +1,60 @@
+.vod-reason-field {
+    width: 100%;
+    max-width: 600px;
+    min-height: 60px;
+}
+
+.post-type-shop_order .vod-reason-field {
+    max-width: 100% !important;
+    box-sizing: border-box;
+}
+
+/* Main VOD product select */
+.select2-container {
+    min-width: 350px !important;
+    max-width: 600px;
+}
+
+.select2-selection {
+    min-height: 32px;
+}
+
+/* Specific fix for user edit/profile screen */
+.profile-php .select2-container,
+.user-edit-php .select2-container {
+    min-width: 350px !important;
+    max-width: 600px !important;
+}
+
+.dsi-field {
+    max-width: 700px;
+}
+
+.dsi-inline-form {
+    display: inline-block;
+    margin: 0;
+}
+
+.dsi-reason {
+    width: 320px;
+}
+
+.dsi-vod-meta table.widefat td,
+.dsi-vod-meta table.widefat th {
+    vertical-align: top;
+}
+
+/* User edit/profile: make product Select2 usable */
+.user-edit-php .dsi-vod-meta .select2-container,
+.profile-php   .dsi-vod-meta .select2-container {
+  width: 100% !important;
+  min-width: 450px !important;
+  max-width: 800px !important;
+  box-sizing: border-box !important;
+}
+
+.user-edit-php .dsi-vod-meta .wc-product-search,
+.profile-php   .dsi-vod-meta .wc-product-search {
+  width: 100% !important;
+  max-width: 800px !important;
+}
